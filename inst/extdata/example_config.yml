@@ -1,0 +1,71 @@
+# sparcproteomics analysis configuration
+# Only values that differ from the defaults are needed; everything is shown
+# here for reference. Relative paths are resolved from this file's folder.
+
+study:
+  title: "My proteomics study"
+  description: "Plasma from treated vs untreated patients, DIA on timsTOF."  # used by the AI prompt
+  species: human        # human | mouse | rat | zebrafish | fly | worm | other  (list_species())
+  tissue: plasma        # free text
+
+input:
+  matrix: report.pg_matrix.tsv
+  format: diann         # diann | spectronaut | maxquant | generic | annotated_xlsx
+  sample_sheet: samples.csv     # not needed for annotated_xlsx
+  sample_column: sample_id      # sample-sheet column matching the matrix columns
+  intensity: auto               # MaxQuant: auto | lfq | intensity | ibaq
+  is_log2: false                # true if the values are already log2
+  zero_is_missing: true
+  duplicate_columns: error      # annotated_xlsx: error | first | average | log2 | suffix
+  # annotation_rows: [Condition, Sex, Timepoint]   # annotated_xlsx only
+
+output:
+  dir: results
+
+design:
+  group_column: group           # sample-sheet column defining the groups
+  control: Control              # reference group
+  comparisons: all_vs_control   # all_vs_control | pairwise | list, e.g.
+  #   - "DoseHigh vs Control"
+  #   - "DoseHigh - DoseLow"     (A vs B: positive log2FC = higher in A)
+  covariates: []                # e.g. [sex, age]  (limma only)
+  block: ~                      # e.g. patient_id for repeated measures (limma only)
+  incomplete_annotation: drop   # drop | error
+  min_group_size: 2
+
+preprocessing:
+  filter:
+    method: any_group           # any_group | all_groups | overall | none
+    min_valid_fraction: 0.7
+  normalization: median         # none | median | quantile | cyclicloess
+  imputation:
+    method: mixed               # none | mixed | knn | downshift | mindet
+    downshift_shift: 1.8        # SDs below each sample's mean
+    downshift_width: 0.3
+    mnar_group_fraction: 0.6
+    knn_k: 10
+    seed: 42
+    use_for_de: false           # keep false: tests run on un-imputed data
+
+statistics:
+  method: limma                 # limma | welch | student
+  limma_trend: true
+  limma_robust: true
+  p_adjust: BH                  # BH | BY | bonferroni | holm | ...
+  adj_p_cutoff: 0.05
+  log2fc_cutoff: 0.585          # 1.5-fold
+  min_valid_per_group: 2
+  global_f_test: true
+
+enrichment:
+  enabled: true                 # Reactome ORA + GSEA; needs clusterProfiler, ReactomePA, OrgDb
+  min_gs_size: 10
+  max_gs_size: 500
+  p_cutoff: 0.05
+
+ai:
+  enabled: auto                 # auto (only if a key is set) | true | false
+  key_env: ANTHROPIC_API_KEY    # the key is read from this environment variable
+  model: claude-opus-5-5
+  max_tokens: 16000
+  web_search: false

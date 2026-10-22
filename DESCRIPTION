@@ -1,0 +1,46 @@
+Package: sparcproteomics
+Type: Package
+Title: Engine-Agnostic Downstream Analysis of Quantitative Proteomics Data
+Version: 0.1.0
+Authors@R:
+    person("First", "Last", email = "first.last@example.org",
+           role = c("aut", "cre"))
+Description: Downstream analysis of protein-level quantitative proteomics
+    data from DIA-NN, Spectronaut, MaxQuant or a generic matrix. A YAML
+    configuration (or an interactive wizard) declares the species, sample
+    groups, control group, comparisons, imputation method and statistical
+    method. Data are held in a 'SummarizedExperiment'. Differential abundance
+    is tested with 'limma' moderated statistics or Welch/Student t-tests on
+    the un-imputed matrix, with optional Reactome enrichment and optional
+    large-language-model interpretation through the Anthropic API.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends:
+    R (>= 4.2)
+Imports:
+    limma,
+    matrixStats,
+    S4Vectors,
+    stats,
+    SummarizedExperiment,
+    utils,
+    yaml
+Suggests:
+    clusterProfiler,
+    ggplot2,
+    httr2,
+    impute,
+    jsonlite,
+    org.Ce.eg.db,
+    org.Dm.eg.db,
+    org.Dr.eg.db,
+    org.Hs.eg.db,
+    org.Mm.eg.db,
+    org.Rn.eg.db,
+    ReactomePA,
+    openxlsx,
+    readxl,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.1
