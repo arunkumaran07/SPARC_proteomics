@@ -1,0 +1,24 @@
+study:
+  title: "Example: simulated 3-group cell-line study"
+  description: "Simulated HEK cell proteomics, two treatments vs control, 5 replicates each (DIA-NN output)."
+  species: human
+  tissue: cell line
+input:
+  matrix: report.pg_matrix.tsv
+  format: diann
+  sample_sheet: samples.csv
+  sample_column: sample_id
+design:
+  group_column: group
+  control: Control
+  comparisons: all_vs_control
+  covariates: [batch]
+preprocessing:
+  normalization: median
+  imputation: {method: mixed}
+statistics:
+  method: limma
+ai:
+  enabled: auto
+output:
+  dir: results

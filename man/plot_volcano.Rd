@@ -19,7 +19,7 @@ plot_volcano(
 
 \item{adj_p_cutoff, log2fc_cutoff}{Threshold lines.}
 
-\item{label_n}{Number of top significant proteins to label.}
+\item{label_n}{Number of top significant proteins to label, split between up and down.}
 }
 \value{
 A ggplot object.

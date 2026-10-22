@@ -23,6 +23,7 @@ jobs:
             any::rcmdcheck
             any::testthat
             any::ggplot2
+            any::ggrepel
             any::readxl
             any::openxlsx
             any::httr2

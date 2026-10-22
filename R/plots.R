@@ -32,7 +32,7 @@ plot_pca <- function(se, assay = "imputed", color = "group") {
 #' @param tab One table from `run_de()$tables`.
 #' @param title Plot title.
 #' @param adj_p_cutoff,log2fc_cutoff Threshold lines.
-#' @param label_n Number of top significant proteins to label.
+#' @param label_n Number of top significant proteins to label, split between up and down.
 #' @return A ggplot object.
 #' @export
 plot_volcano <- function(tab, title = "", adj_p_cutoff = 0.05, log2fc_cutoff = 0.585,
@@ -41,12 +41,24 @@ plot_volcano <- function(tab, title = "", adj_p_cutoff = 0.05, log2fc_cutoff = 0
   d <- tab[!is.na(tab$P.Value), , drop = FALSE]
   d$class <- ifelse(d$significant, ifelse(d$logFC > 0, "up", "down"), "ns")
   d$label <- ifelse(is.na(d$gene), d$protein_id, sub("[;,].*$", "", d$gene))
-  lab <- utils::head(d[d$significant, ], label_n)
+  s <- d[d$significant, ]
+  s <- s[order(s$P.Value), ]
+  up <- s[s$logFC > 0, ]; dn <- s[s$logFC < 0, ]
+  n_dn <- min(nrow(dn), label_n %/% 2)
+  lab <- rbind(utils::head(up, label_n - n_dn), utils::head(dn, n_dn))
+  # ggrepel (if installed) moves labels apart; otherwise overlapping labels are dropped
+  labels <- if (requireNamespace("ggrepel", quietly = TRUE)) {
+    ggrepel::geom_text_repel(data = lab, ggplot2::aes(label = .data$label), size = 2.8,
+                             max.overlaps = Inf, min.segment.length = 0,
+                             segment.colour = "grey60", show.legend = FALSE)
+  } else {
+    ggplot2::geom_text(data = lab, ggplot2::aes(label = .data$label), size = 2.8,
+                       vjust = -0.6, check_overlap = TRUE, show.legend = FALSE)
+  }
   ggplot2::ggplot(d, ggplot2::aes(.data$logFC, -log10(.data$P.Value), colour = .data$class)) +
     ggplot2::geom_point(size = 1.2, alpha = 0.7) +
     ggplot2::geom_vline(xintercept = c(-1, 1) * log2fc_cutoff, linetype = 2, colour = "grey50") +
-    ggplot2::geom_text(data = lab, ggplot2::aes(label = .data$label), size = 2.8,
-                       vjust = -0.6, show.legend = FALSE) +
+    labels +
     ggplot2::scale_colour_manual(values = c(down = "#2166AC", ns = "grey70", up = "#B2182B")) +
     ggplot2::labs(x = "log2 fold change", y = "-log10 p-value", colour = NULL,
                   title = title,

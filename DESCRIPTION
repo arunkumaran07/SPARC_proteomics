@@ -28,6 +28,7 @@ Imports:
 Suggests:
     clusterProfiler,
     ggplot2,
+    ggrepel,
     httr2,
     impute,
     jsonlite,

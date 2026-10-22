@@ -1,0 +1,18 @@
+study:
+  title: "Example: annotated workbook, 2 groups"
+  species: human
+input:
+  matrix: annotated_workbook.xlsx
+  format: annotated_xlsx
+  annotation_rows: [Condition, Sex, Batch]
+  duplicate_columns: log2
+  is_log2: true
+design:
+  group_column: Condition
+  control: Control
+statistics:
+  method: limma
+ai:
+  enabled: false
+output:
+  dir: results
