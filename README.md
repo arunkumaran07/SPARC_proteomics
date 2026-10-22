@@ -28,7 +28,7 @@ Reactome enrichment and, optionally, an AI-written interpretation.
 
 ```r
 install.packages("remotes")
-remotes::install_github("arunkumaran07/sparcproteomics")   # needs access while private
+remotes::install_github("arunkumaran07/SPARC_proteomics")   # needs access while private
 # optional extras
 BiocManager::install(c("impute", "clusterProfiler", "ReactomePA", "org.Hs.eg.db", "org.Mm.eg.db"))
 install.packages(c("ggplot2", "readxl", "httr2"))
