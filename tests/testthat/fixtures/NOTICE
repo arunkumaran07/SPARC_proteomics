@@ -1,0 +1,5 @@
+diann_report_subset.tsv is a column subset of
+test/data/quant/quant_lfq_ion_DIA_AIF/DIANN_1.9_beta_sample_report.tsv from the
+ProteoBench repository (https://github.com/Proteobench/ProteoBench), licensed
+under the Apache License 2.0. The underlying runs are the Orbitrap AIF data of
+PXD028735 (Van Puyvelde et al., Sci Data 9:126, 2022).

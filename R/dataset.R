@@ -18,9 +18,10 @@
 build_dataset <- function(cfg) {
   cfg <- validate_config(cfg)
   inp <- cfg$input
-  tab <- read_protein_table(inp$matrix, inp$format, intensity = inp$intensity,
-                            id_column = inp$id_column, gene_column = inp$gene_column,
-                            annotation_rows = inp$annotation_rows)
+  tab <- if (inp$format %in% .precursor_formats) .read_and_summarize(inp) else
+    read_protein_table(inp$matrix, inp$format, intensity = inp$intensity,
+                       id_column = inp$id_column, gene_column = inp$gene_column,
+                       annotation_rows = inp$annotation_rows)
 
   if (inp$format == "annotated_xlsx") {
     samples <- tab$samples

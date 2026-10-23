@@ -10,7 +10,8 @@ study:
 
 input:
   matrix: report.pg_matrix.tsv
-  format: diann         # diann | spectronaut | maxquant | generic | annotated_xlsx
+  format: diann         # protein level: diann | spectronaut | maxquant | generic | annotated_xlsx
+                        # precursor level: diann_report (report.tsv/.parquet) | peptide_generic
   sample_sheet: samples.csv     # not needed for annotated_xlsx
   sample_column: sample_id      # sample-sheet column matching the matrix columns
   intensity: auto               # MaxQuant: auto | lfq | intensity | ibaq
@@ -18,6 +19,13 @@ input:
   zero_is_missing: true
   duplicate_columns: error      # annotated_xlsx: error | first | average | log2 | suffix
   # annotation_rows: [Condition, Sex, Timepoint]   # annotated_xlsx only
+  # precursor-level formats only:
+  summarization: median_polish  # median_polish | top3 | sum
+  min_precursors: 1
+  diann_qvalue: 0.01            # diann_report: Q.Value and PG.Q.Value filter
+  diann_quantity: Precursor.Normalised
+  # protein_column: protein     # peptide_generic
+  # precursor_column: peptide   # peptide_generic
 
 output:
   dir: results
@@ -38,6 +46,8 @@ preprocessing:
     method: any_group           # any_group | all_groups | overall | none
     min_valid_fraction: 0.7
   normalization: median         # none | median | quantile | cyclicloess
+  normalization_reference: ~    # optional file of stable protein IDs/genes for median
+                                # normalization; use when many proteins change
   imputation:
     method: mixed               # none | mixed | knn | downshift | mindet
     downshift_shift: 1.8        # SDs below each sample's mean

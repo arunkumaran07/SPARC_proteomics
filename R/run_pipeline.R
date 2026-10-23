@@ -33,7 +33,13 @@ run_pipeline <- function(config, verbose = TRUE) {
   se <- build_dataset(cfg)
   pp <- cfg$preprocessing
   se <- pp_filter(se, pp$filter$method, pp$filter$min_valid_fraction)
-  se <- pp_normalize(se, pp$normalization)
+  ref <- pp$normalization_reference
+  if (!is.null(ref)) {
+    if (!file.exists(ref)) stop("Normalization reference file not found: ", ref, call. = FALSE)
+    ref <- trimws(readLines(ref, warn = FALSE))
+    ref <- ref[nzchar(ref) & !startsWith(ref, "#")]
+  }
+  se <- pp_normalize(se, pp$normalization, reference = ref)
   im <- pp$imputation
   se <- pp_impute(se, im$method, shift = im$downshift_shift, width = im$downshift_width,
                   mnar_group_fraction = im$mnar_group_fraction, k = im$knn_k, seed = im$seed)

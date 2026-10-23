@@ -38,20 +38,40 @@ pp_filter <- function(se, method = "any_group", min_fraction = 0.7, assay = "log
 #'   engine), `"median"` (subtract each sample's median, add back the overall
 #'   median), `"quantile"` or `"cyclicloess"` (both via
 #'   [limma::normalizeBetweenArrays()]).
+#'
+#' Median normalization assumes most proteins do not change. When a large
+#' fraction does (e.g. strong treatments, spike-in or mixed-species designs,
+#' tissue-composition shifts), give a `reference` set expected to be stable,
+#' and the sample medians are computed from those proteins only.
+#'
+#' @param reference For `"median"`: optional protein IDs or gene symbols
+#'   (matched against `protein_id` and `gene`) used to compute the
+#'   normalization factors. All proteins are still normalized.
 #' @return `se` with a new assay `norm`.
 #' @export
-pp_normalize <- function(se, method = "median") {
+pp_normalize <- function(se, method = "median", reference = NULL) {
   x <- SummarizedExperiment::assay(se, "log2")
+  ref_rows <- rep(TRUE, nrow(x))
+  if (!is.null(reference) && method == "median") {
+    rd <- SummarizedExperiment::rowData(se)
+    ref_rows <- rd$protein_id %in% reference | (!is.na(rd$gene) & rd$gene %in% reference)
+    if (sum(ref_rows) < 20)
+      stop("Only ", sum(ref_rows), " reference proteins matched; need at least 20.", call. = FALSE)
+    log_msg("Median normalization on ", sum(ref_rows), " reference proteins.")
+  } else if (!is.null(reference)) {
+    log_msg("NOTE: normalization reference is only used by method 'median'; ignored.")
+  }
   y <- switch(method,
     none        = x,
-    median      = sweep(x, 2, matrixStats::colMedians(x, na.rm = TRUE), "-") +
-                    stats::median(x, na.rm = TRUE),
+    median      = sweep(x, 2, matrixStats::colMedians(x[ref_rows, , drop = FALSE], na.rm = TRUE), "-") +
+                    stats::median(x[ref_rows, ], na.rm = TRUE),
     quantile    = limma::normalizeBetweenArrays(x, method = "quantile"),
     cyclicloess = limma::normalizeBetweenArrays(x, method = "cyclicloess"),
     stop("Unknown normalization '", method, "'.", call. = FALSE))
   dimnames(y) <- dimnames(x)
   SummarizedExperiment::assay(se, "norm") <- y
   S4Vectors::metadata(se)$normalization <- method
+  S4Vectors::metadata(se)$normalization_reference_n <- if (is.null(reference)) NA else sum(ref_rows)
   log_msg("Normalization: ", method, ".")
   se
 }

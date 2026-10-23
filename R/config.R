@@ -32,8 +32,9 @@ default_config <- function() {
       tissue      = ""       # free text, e.g. "plasma", "skeletal muscle"
     ),
     input = list(
-      matrix            = NULL,      # path to the protein-group table
-      format            = "diann",   # diann | spectronaut | maxquant | generic | annotated_xlsx
+      matrix            = NULL,      # path to the protein, peptide or precursor table
+      format            = "diann",   # protein level: diann | spectronaut | maxquant | generic | annotated_xlsx
+                                     # precursor level: diann_report | peptide_generic
       sample_sheet      = NULL,      # CSV/TSV/XLSX; not needed for annotated_xlsx
       sample_column     = "sample_id",
       intensity         = "auto",    # maxquant: "lfq" | "intensity"; auto prefers LFQ
@@ -42,7 +43,14 @@ default_config <- function() {
       is_log2           = FALSE,
       zero_is_missing   = TRUE,
       annotation_rows   = NULL,      # annotated_xlsx: row labels holding sample annotations
-      duplicate_columns = "error"    # error | first | average | suffix | log2
+      duplicate_columns = "error",   # error | first | average | suffix | log2
+      # precursor-level formats only
+      summarization     = "median_polish", # median_polish | top3 | sum
+      min_precursors    = 1,
+      diann_quantity    = "Precursor.Normalised",
+      diann_qvalue      = 0.01,
+      protein_column    = NULL,      # peptide_generic
+      precursor_column  = NULL       # peptide_generic
     ),
     output = list(dir = "results"),
     design = list(
@@ -60,6 +68,7 @@ default_config <- function() {
         min_valid_fraction = 0.7
       ),
       normalization = "median",           # none | median | quantile | cyclicloess
+      normalization_reference = NULL,     # optional file: one stable protein ID or gene per line
       imputation = list(
         method              = "mixed",    # none | mixed | knn | downshift | mindet
         downshift_shift     = 1.8,        # SDs below the sample mean
@@ -102,7 +111,9 @@ default_config <- function() {
 }
 
 .choices <- list(
-  format        = c("diann", "spectronaut", "maxquant", "generic", "annotated_xlsx"),
+  format        = c("diann", "spectronaut", "maxquant", "generic", "annotated_xlsx",
+                    "diann_report", "peptide_generic"),
+  summarization = c("median_polish", "top3", "sum"),
   duplicate     = c("error", "first", "average", "suffix", "log2"),
   incomplete    = c("drop", "error"),
   filter        = c("any_group", "all_groups", "overall", "none"),
@@ -126,6 +137,9 @@ read_config <- function(path) {
   base <- dirname(normalizePath(path))
   for (k in c("matrix", "sample_sheet"))
     if (!is.null(cfg$input[[k]])) cfg$input[[k]] <- .resolve_path(cfg$input[[k]], base)
+  if (!is.null(cfg$preprocessing$normalization_reference))
+    cfg$preprocessing$normalization_reference <-
+      .resolve_path(cfg$preprocessing$normalization_reference, base)
   cfg$output$dir <- .resolve_path(cfg$output$dir, base)
   validate_config(cfg)
 }
@@ -158,6 +172,9 @@ validate_config <- function(cfg) {
   cfg$study$species <- species_info(cfg$study$species)$species
   chk(cfg$input$format, .choices$format, "input.format")
   chk(cfg$input$duplicate_columns, .choices$duplicate, "input.duplicate_columns")
+  chk(cfg$input$summarization, .choices$summarization, "input.summarization")
+  if (cfg$input$format == "peptide_generic" && is.null(cfg$input$protein_column))
+    stop("input.protein_column is required for format 'peptide_generic'.", call. = FALSE)
   chk(cfg$design$incomplete_annotation, .choices$incomplete, "design.incomplete_annotation")
   chk(cfg$preprocessing$filter$method, .choices$filter, "preprocessing.filter.method")
   chk(cfg$preprocessing$normalization, .choices$normalization, "preprocessing.normalization")
@@ -217,8 +234,21 @@ create_config <- function(path = "analysis_config.yml", matrix = NULL,
                             labels = paste0(sp$species, " (", sp$label, ")"))
   cfg$study$tissue <- ask("Tissue / sample type (optional)")
 
-  cfg$input$format <- pick(.choices$format, "Input format")
-  cfg$input$matrix <- matrix %||% ask("Path to the protein table")
+  cfg$input$format <- pick(.choices$format, "Input format", labels = c(
+    "DIA-NN protein matrix (report.pg_matrix.tsv)", "Spectronaut protein report",
+    "MaxQuant proteinGroups.txt", "Generic protein table", "Annotated Excel workbook",
+    "DIA-NN main report, precursor level (report.tsv / report.parquet)",
+    "Generic peptide/precursor table"))
+  cfg$input$matrix <- matrix %||% ask("Path to the data table")
+  if (cfg$input$format %in% .precursor_formats) {
+    cfg$input$summarization <- pick(.choices$summarization, "Precursor-to-protein summarization",
+      labels = c("median polish (recommended)", "top3", "sum"))
+    if (cfg$input$format == "peptide_generic") {
+      cfg$input$protein_column <- ask("Column holding protein IDs")
+      cfg$input$precursor_column <- ask("Column holding peptide/precursor IDs (optional)")
+      if (!nzchar(cfg$input$precursor_column)) cfg$input$precursor_column <- NULL
+    }
+  }
   if (cfg$input$format != "annotated_xlsx") {
     cfg$input$sample_sheet <- sample_sheet %||% ask("Path to the sample sheet")
     ss <- read_sample_sheet(cfg$input$sample_sheet)

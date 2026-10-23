@@ -27,11 +27,13 @@ Imports:
     yaml
 Suggests:
     clusterProfiler,
+    data.table,
     ggplot2,
     ggrepel,
     httr2,
     impute,
     jsonlite,
+    nanoparquet,
     org.Ce.eg.db,
     org.Dm.eg.db,
     org.Dr.eg.db,
@@ -39,6 +41,7 @@ Suggests:
     org.Mm.eg.db,
     org.Rn.eg.db,
     ReactomePA,
+    arrow,
     openxlsx,
     readxl,
     testthat (>= 3.0.0)

@@ -4,7 +4,7 @@
 \alias{pp_normalize}
 \title{Normalize log2 intensities between samples}
 \usage{
-pp_normalize(se, method = "median")
+pp_normalize(se, method = "median", reference = NULL)
 }
 \arguments{
 \item{se}{A \code{SummarizedExperiment} with a \code{log2} assay.}
@@ -12,7 +12,16 @@ pp_normalize(se, method = "median")
 \item{method}{\code{"none"} (data already normalized upstream, e.g. by the search
 engine), \code{"median"} (subtract each sample's median, add back the overall
 median), \code{"quantile"} or \code{"cyclicloess"} (both via
-\code{\link[limma:normalizebetweenarrays]{limma::normalizeBetweenArrays()}}).}
+\code{\link[limma:normalizebetweenarrays]{limma::normalizeBetweenArrays()}}).
+
+Median normalization assumes most proteins do not change. When a large
+fraction does (e.g. strong treatments, spike-in or mixed-species designs,
+tissue-composition shifts), give a \code{reference} set expected to be stable,
+and the sample medians are computed from those proteins only.}
+
+\item{reference}{For \code{"median"}: optional protein IDs or gene symbols
+(matched against \code{protein_id} and \code{gene}) used to compute the
+normalization factors. All proteins are still normalized.}
 }
 \value{
 \code{se} with a new assay \code{norm}.
