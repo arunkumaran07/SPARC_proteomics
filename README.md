@@ -1,5 +1,10 @@
 # sparcproteomics
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23603768.svg)](https://doi.org/10.5281/zenodo.23603768)
+[![R-CMD-check](https://github.com/arunkumaran07/SPARC_proteomics/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/arunkumaran07/SPARC_proteomics/actions/workflows/R-CMD-check.yaml)
+[![benchmark](https://github.com/arunkumaran07/SPARC_proteomics/actions/workflows/benchmark.yaml/badge.svg)](https://github.com/arunkumaran07/SPARC_proteomics/actions/workflows/benchmark.yaml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE.md)
+
 Engine-agnostic downstream analysis of quantitative proteomics in R.
 Point it at a DIA-NN, Spectronaut or MaxQuant protein table, a DIA-NN precursor
 report, a peptide table or an annotated Excel workbook, plus a sample sheet;
@@ -149,4 +154,15 @@ arunkumaran07. The benchmark data and one test fixture are derived from ProteoBe
 
 ## Citation
 
-See [CITATION.cff](CITATION.cff) (GitHub shows a "Cite this repository" button).
+If you use sparcproteomics, please cite the version you used. Each release is archived
+on Zenodo with its own DOI:
+
+- **v0.2.0:** arunkumaran07 (2026). *sparcproteomics: engine-agnostic downstream
+  analysis of quantitative proteomics data* (v0.2.0). Zenodo.
+  https://doi.org/10.5281/zenodo.23603769
+- **All versions** (always resolves to the latest):
+  https://doi.org/10.5281/zenodo.23603768
+
+Install the exact version you cite with
+`remotes::install_github("arunkumaran07/SPARC_proteomics@v0.2.0")`.
+GitHub's "Cite this repository" button uses [CITATION.cff](CITATION.cff).
