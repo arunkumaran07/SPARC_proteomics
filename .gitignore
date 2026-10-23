@@ -3,5 +3,5 @@
 .RData
 *.Rcheck/
 *.tar.gz
-results/
+/results/
 demo/
