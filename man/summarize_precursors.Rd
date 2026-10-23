@@ -7,7 +7,7 @@
 summarize_precursors(
   x,
   protein,
-  method = c("median_polish", "top3", "sum"),
+  method = c("median_polish", "top3", "sum", "maxlfq"),
   min_precursors = 1
 )
 }
@@ -35,13 +35,25 @@ log2 matrix of each protein; the protein value is the overall effect plus
 the sample effect. Robust to outlying precursors and to precursors
 missing in some samples (the approach of MSstats' TMP summarization).}
 \item{\code{top3}}{For each protein, the three precursors with the highest
-mean log2 intensity across samples; the protein value is the log2 of the
-mean of their linear intensities in each sample (Silva et al. 2006).}
+mean log2 intensity across samples (chosen once, for all samples); the
+protein value is the log2 of the mean of their linear intensities in
+each sample (Silva et al. 2006). A sample where none of those three was
+observed gets \code{NA}, and averaging only the observed ones shifts values
+when some are missing, so \code{top3} suits data with few missing values.}
 \item{\code{sum}}{log2 of the summed linear intensities of all precursors.
 Simple, but a precursor missing in one sample lowers that sample's
 value, so it is sensitive to missing values.}
+\item{\code{maxlfq}}{The MaxLFQ approach (Cox et al. 2014): for every pair of
+samples, the median log-ratio over precursors observed in both; then
+the sample values that best fit all pairwise ratios (least squares),
+scaled so the summed intensity across samples is preserved. Samples
+not connected to the protein's largest group of samples through shared
+precursors get \code{NA}. This is an independent implementation of the
+published algorithm (not the \pkg{iq} package); its run time grows with
+the square of the number of samples.}
 }
-A protein gets \code{NA} in samples where none of its precursors was observed.
+A protein gets \code{NA} in samples where none of its precursors was observed
+(for \code{top3}, none of its three selected precursors).
 }
 \examples{
 x <- rbind(p1 = c(20, 21, 22), p2 = c(18, 19, NA), p3 = c(25, 25, 26))

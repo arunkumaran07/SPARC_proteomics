@@ -45,7 +45,7 @@ default_config <- function() {
       annotation_rows   = NULL,      # annotated_xlsx: row labels holding sample annotations
       duplicate_columns = "error",   # error | first | average | suffix | log2
       # precursor-level formats only
-      summarization     = "median_polish", # median_polish | top3 | sum
+      summarization     = "median_polish", # median_polish | maxlfq | top3 | sum
       min_precursors    = 1,
       diann_quantity    = "Precursor.Normalised",
       diann_qvalue      = 0.01,
@@ -67,7 +67,7 @@ default_config <- function() {
         method             = "any_group", # any_group | all_groups | overall | none
         min_valid_fraction = 0.7
       ),
-      normalization = "median",           # none | median | quantile | cyclicloess
+      normalization = "mode",             # mode | median | none | quantile | cyclicloess
       normalization_reference = NULL,     # optional file: one stable protein ID or gene per line
       imputation = list(
         method              = "mixed",    # none | mixed | knn | downshift | mindet
@@ -85,9 +85,16 @@ default_config <- function() {
       limma_robust        = TRUE,
       p_adjust            = "BH",         # any method accepted by stats::p.adjust
       adj_p_cutoff        = 0.05,
-      log2fc_cutoff       = 0.585,        # 1.5-fold
+      log2fc_cutoff       = 0.585,        # 1.5-fold; used by significance = cutoff
+      significance        = "cutoff",     # cutoff | treat (limma only)
+      treat_fc            = 1.5,          # fold-change threshold tested by TREAT
       min_valid_per_group = 2,            # per comparison, both groups need this many values
       global_f_test       = TRUE          # limma only, when there are > 2 groups
+    ),
+    detection = list(                     # presence/absence testing (see run_detection())
+      enabled             = TRUE,
+      min_delta           = 0.5,          # minimum difference in detection rate
+      on_off_min_fraction = 0.67          # descriptive on/off flag threshold
     ),
     enrichment = list(
       enabled      = TRUE,
@@ -113,11 +120,11 @@ default_config <- function() {
 .choices <- list(
   format        = c("diann", "spectronaut", "maxquant", "generic", "annotated_xlsx",
                     "diann_report", "peptide_generic"),
-  summarization = c("median_polish", "top3", "sum"),
+  summarization = c("median_polish", "top3", "sum", "maxlfq"),
   duplicate     = c("error", "first", "average", "suffix", "log2"),
   incomplete    = c("drop", "error"),
   filter        = c("any_group", "all_groups", "overall", "none"),
-  normalization = c("none", "median", "quantile", "cyclicloess"),
+  normalization = c("none", "median", "mode", "quantile", "cyclicloess"),
   imputation    = c("none", "mixed", "knn", "downshift", "mindet"),
   stat_method   = c("limma", "welch", "student")
 )
@@ -182,6 +189,14 @@ validate_config <- function(cfg) {
       "preprocessing.imputation.method")
   chk(cfg$statistics$method, .choices$stat_method, "statistics.method")
   chk(cfg$statistics$p_adjust, stats::p.adjust.methods, "statistics.p_adjust")
+  chk(cfg$statistics$significance, c("cutoff", "treat"), "statistics.significance")
+  for (k in c("min_delta", "on_off_min_fraction")) {
+    v <- cfg$detection[[k]]
+    if (!is.numeric(v) || v <= 0 || v > 1)
+      stop("detection.", k, " must be in (0, 1].", call. = FALSE)
+  }
+  if (!is.numeric(cfg$statistics$treat_fc) || cfg$statistics$treat_fc <= 1)
+    stop("statistics.treat_fc must be a fold change greater than 1 (e.g. 1.5).", call. = FALSE)
   chk(tolower(as.character(cfg$ai$enabled)), c("auto", "true", "false"), "ai.enabled")
   f <- cfg$preprocessing$filter$min_valid_fraction
   if (!is.numeric(f) || f < 0 || f > 1)
@@ -242,7 +257,7 @@ create_config <- function(path = "analysis_config.yml", matrix = NULL,
   cfg$input$matrix <- matrix %||% ask("Path to the data table")
   if (cfg$input$format %in% .precursor_formats) {
     cfg$input$summarization <- pick(.choices$summarization, "Precursor-to-protein summarization",
-      labels = c("median polish (recommended)", "top3", "sum"))
+      labels = c("median polish (recommended)", "top3", "sum", "MaxLFQ"))
     if (cfg$input$format == "peptide_generic") {
       cfg$input$protein_column <- ask("Column holding protein IDs")
       cfg$input$precursor_column <- ask("Column holding peptide/precursor IDs (optional)")
@@ -290,6 +305,7 @@ create_config <- function(path = "analysis_config.yml", matrix = NULL,
 
   cfg$preprocessing$normalization <- pick(.choices$normalization, "Normalization",
     labels = c("none (already normalized)", "median centering",
+               "mode of ratios (recommended; robust when many proteins change)",
                "quantile", "cyclic loess"))
   cfg$preprocessing$imputation$method <- pick(.choices$imputation,
     "Imputation (used for PCA / clustering; tests use un-imputed data by default)",

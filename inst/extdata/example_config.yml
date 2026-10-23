@@ -20,7 +20,7 @@ input:
   duplicate_columns: error      # annotated_xlsx: error | first | average | log2 | suffix
   # annotation_rows: [Condition, Sex, Timepoint]   # annotated_xlsx only
   # precursor-level formats only:
-  summarization: median_polish  # median_polish | top3 | sum
+  summarization: median_polish  # median_polish | maxlfq | top3 | sum
   min_precursors: 1
   diann_qvalue: 0.01            # diann_report: Q.Value and PG.Q.Value filter
   diann_quantity: Precursor.Normalised
@@ -45,9 +45,9 @@ preprocessing:
   filter:
     method: any_group           # any_group | all_groups | overall | none
     min_valid_fraction: 0.7
-  normalization: median         # none | median | quantile | cyclicloess
-  normalization_reference: ~    # optional file of stable protein IDs/genes for median
-                                # normalization; use when many proteins change
+  normalization: mode           # mode (default) | median | none | quantile | cyclicloess
+  normalization_reference: ~    # median only: file of stable protein IDs/genes used to
+                                # compute the factors
   imputation:
     method: mixed               # none | mixed | knn | downshift | mindet
     downshift_shift: 1.8        # SDs below each sample's mean
@@ -59,6 +59,8 @@ preprocessing:
 
 statistics:
   method: limma                 # limma | welch | student
+  significance: cutoff          # cutoff (adj. p + |log2FC| cutoff) | treat (limma TREAT)
+  treat_fc: 1.5                 # fold change tested by TREAT
   limma_trend: true
   limma_robust: true
   p_adjust: BH                  # BH | BY | bonferroni | holm | ...
@@ -66,6 +68,11 @@ statistics:
   log2fc_cutoff: 0.585          # 1.5-fold
   min_valid_per_group: 2
   global_f_test: true
+
+detection:                      # presence/absence, before valid-value filtering
+  enabled: true
+  min_delta: 0.5                # minimum difference in detection rate
+  on_off_min_fraction: 0.67     # descriptive on/off list
 
 enrichment:
   enabled: true                 # Reactome ORA + GSEA; needs clusterProfiler, ReactomePA, OrgDb

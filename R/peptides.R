@@ -9,13 +9,25 @@
 #'     the sample effect. Robust to outlying precursors and to precursors
 #'     missing in some samples (the approach of MSstats' TMP summarization).}
 #'   \item{`top3`}{For each protein, the three precursors with the highest
-#'     mean log2 intensity across samples; the protein value is the log2 of the
-#'     mean of their linear intensities in each sample (Silva et al. 2006).}
+#'     mean log2 intensity across samples (chosen once, for all samples); the
+#'     protein value is the log2 of the mean of their linear intensities in
+#'     each sample (Silva et al. 2006). A sample where none of those three was
+#'     observed gets `NA`, and averaging only the observed ones shifts values
+#'     when some are missing, so `top3` suits data with few missing values.}
 #'   \item{`sum`}{log2 of the summed linear intensities of all precursors.
 #'     Simple, but a precursor missing in one sample lowers that sample's
 #'     value, so it is sensitive to missing values.}
+#'   \item{`maxlfq`}{The MaxLFQ approach (Cox et al. 2014): for every pair of
+#'     samples, the median log-ratio over precursors observed in both; then
+#'     the sample values that best fit all pairwise ratios (least squares),
+#'     scaled so the summed intensity across samples is preserved. Samples
+#'     not connected to the protein's largest group of samples through shared
+#'     precursors get `NA`. This is an independent implementation of the
+#'     published algorithm (not the \pkg{iq} package); its run time grows with
+#'     the square of the number of samples.}
 #' }
-#' A protein gets `NA` in samples where none of its precursors was observed.
+#' A protein gets `NA` in samples where none of its precursors was observed
+#' (for `top3`, none of its three selected precursors).
 #'
 #' @param x Numeric matrix of log2 intensities, precursors x samples.
 #' @param protein Protein (group) identifier for each row of `x`.
@@ -27,7 +39,7 @@
 #' @examples
 #' x <- rbind(p1 = c(20, 21, 22), p2 = c(18, 19, NA), p3 = c(25, 25, 26))
 #' summarize_precursors(x, c("A", "A", "B"))$x
-summarize_precursors <- function(x, protein, method = c("median_polish", "top3", "sum"),
+summarize_precursors <- function(x, protein, method = c("median_polish", "top3", "sum", "maxlfq"),
                                  min_precursors = 1) {
   method <- match.arg(method)
   stopifnot(nrow(x) == length(protein))
@@ -55,7 +67,8 @@ summarize_precursors <- function(x, protein, method = c("median_polish", "top3",
         top <- utils::head(order(rowMeans(m, na.rm = TRUE), decreasing = TRUE), 3)
         log2(colMeans(2^m[top, , drop = FALSE], na.rm = TRUE))
       },
-      sum = log2(colSums(2^m, na.rm = TRUE)))
+      sum = log2(colSums(2^m, na.rm = TRUE)),
+      maxlfq = .maxlfq_one(m))
     est[!seen] <- NA
     est
   }
@@ -185,3 +198,44 @@ read_precursor_table <- function(path, format = c("diann_report", "peptide_gener
 }
 
 .precursor_formats <- c("diann_report", "peptide_generic")
+
+# MaxLFQ for one protein: m is precursors x samples (log2, NA = missing).
+.maxlfq_one <- function(m) {
+  n <- ncol(m)
+  out <- rep(NA_real_, n)
+  obs <- !is.na(m)
+  # pairwise median log-ratios over shared precursors
+  pr <- which(upper.tri(diag(n)), arr.ind = TRUE)
+  r <- apply(pr, 1, function(ij) {
+    shared <- obs[, ij[1]] & obs[, ij[2]]
+    if (any(shared)) stats::median(m[shared, ij[1]] - m[shared, ij[2]]) else NA_real_
+  })
+  ok <- !is.na(r)
+  pr <- pr[ok, , drop = FALSE]; r <- r[ok]
+  seen <- which(colSums(obs) > 0)
+  if (!length(seen)) return(out)
+  # connected components of samples linked by shared precursors
+  comp <- seq_len(n)
+  for (k in seq_len(nrow(pr))) {
+    a <- comp[pr[k, 1]]; b <- comp[pr[k, 2]]
+    if (a != b) comp[comp == b] <- a
+  }
+  sizes <- table(comp[seen])
+  main <- as.integer(names(sizes)[which.max(sizes)])
+  s <- seen[comp[seen] == main]
+  if (length(s) == 1) {
+    out[s] <- log2(sum(2^m[obs[, s], s]))
+    return(out)
+  }
+  use <- pr[, 1] %in% s & pr[, 2] %in% s
+  idx <- match(seq_len(n), s)
+  D <- matrix(0, sum(use), length(s))
+  D[cbind(seq_len(sum(use)), idx[pr[use, 1]])] <- 1
+  D[cbind(seq_len(sum(use)), idx[pr[use, 2]])] <- -1
+  # least squares with sum-to-zero constraint
+  A <- rbind(D, rep(1, length(s)))
+  a <- qr.solve(A, c(r[use], 0))
+  total <- sum(2^m[, s][obs[, s]])
+  out[s] <- a + log2(total) - log2(sum(2^a))
+  out
+}

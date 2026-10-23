@@ -1,19 +1,22 @@
 Package: sparcproteomics
 Type: Package
 Title: Engine-Agnostic Downstream Analysis of Quantitative Proteomics Data
-Version: 0.1.0
+Version: 0.2.0
+URL: https://github.com/arunkumaran07/SPARC_proteomics
+BugReports: https://github.com/arunkumaran07/SPARC_proteomics/issues
 Authors@R:
-    person("First", "Last", email = "first.last@example.org",
-           role = c("aut", "cre"))
-Description: Downstream analysis of protein-level quantitative proteomics
-    data from DIA-NN, Spectronaut, MaxQuant or a generic matrix. A YAML
+    person("arunkumaran07", email = "arunkumaran07@users.noreply.github.com",
+           role = c("aut", "cre", "cph"))
+Description: Downstream analysis of quantitative proteomics data from
+    DIA-NN, Spectronaut, MaxQuant, DIA-NN precursor reports, peptide tables
+    or a generic matrix. A YAML
     configuration (or an interactive wizard) declares the species, sample
     groups, control group, comparisons, imputation method and statistical
     method. Data are held in a 'SummarizedExperiment'. Differential abundance
     is tested with 'limma' moderated statistics or Welch/Student t-tests on
     the un-imputed matrix, with optional Reactome enrichment and optional
     large-language-model interpretation through the Anthropic API.
-License: MIT + file LICENSE
+License: Apache License (== 2.0)
 Encoding: UTF-8
 Depends:
     R (>= 4.2)

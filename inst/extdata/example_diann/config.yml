@@ -14,7 +14,7 @@ design:
   comparisons: all_vs_control
   covariates: [batch]
 preprocessing:
-  normalization: median
+  normalization: mode
   imputation: {method: mixed}
 statistics:
   method: limma

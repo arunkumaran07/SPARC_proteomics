@@ -17,7 +17,9 @@ run_de(
   trend = TRUE,
   robust = TRUE,
   global_f_test = TRUE,
-  use_imputed = FALSE
+  use_imputed = FALSE,
+  significance = "cutoff",
+  treat_fc = 1.5
 )
 }
 \arguments{
@@ -44,6 +46,10 @@ within each comparison.}
 groups).}
 
 \item{use_imputed}{Test the imputed assay instead (not recommended).}
+
+\item{significance}{\code{"cutoff"} or \code{"treat"}; see Details.}
+
+\item{treat_fc}{Fold-change threshold for TREAT (linear scale, default 1.5).}
 }
 \value{
 A list: \code{tables} (one data frame per comparison), \code{summary},
@@ -69,4 +75,15 @@ the samples of the two groups. Covariates and blocking are ignored.}
 For each comparison, a protein's statistics are set to \code{NA} (before
 multiple-testing correction) unless both groups have at least
 \code{min_valid_per_group} observed values.
+
+Significance rule:
+\describe{
+\item{\code{cutoff}}{adjusted p < \code{adj_p_cutoff} \strong{and} |log2FC| >=
+\code{log2fc_cutoff} (the common double filter).}
+\item{\code{treat}}{limma only. TREAT (McCarthy & Smyth 2009) tests whether
+|log2FC| exceeds log2(\code{treat_fc}) and controls the FDR for that
+hypothesis; significant = adjusted p < \code{adj_p_cutoff}. It is stricter
+than a cutoff at the same fold change: a protein must be shown to exceed
+the threshold, not merely to have an estimate above it.}
+}
 }

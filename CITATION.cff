@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it as below.
+title: "sparcproteomics: engine-agnostic downstream analysis of quantitative proteomics data"
+type: software
+authors:
+  - alias: arunkumaran07
+version: 0.2.0
+date-released: 2026-10-23
+license: Apache-2.0
+repository-code: https://github.com/arunkumaran07/SPARC_proteomics
+keywords:
+  - proteomics
+  - mass spectrometry
+  - differential abundance
+  - limma
+  - R
+references:
+  - type: article
+    title: A comprehensive LFQ benchmark dataset on modern day acquisition strategies in proteomics
+    authors:
+      - family-names: Van Puyvelde
+        given-names: Bart
+    journal: Scientific Data
+    volume: 9
+    start: 126
+    year: 2022
+    doi: 10.1038/s41597-022-01216-6

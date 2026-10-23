@@ -18,6 +18,14 @@ stopifnot(file.exists(data_file))
 out_dir <- "benchmark/results"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
+# the package defaults this benchmark is scored against
+dc <- default_config()
+DEFAULT <- list(summarization = dc$input$summarization,
+                normalization = dc$preprocessing$normalization,
+                stat = if (dc$statistics$significance == "treat") "limma_treat" else dc$statistics$method)
+key_of <- function(s, n, t) paste(s, n, t, sep = " / ")
+default_key <- key_of(DEFAULT$summarization, DEFAULT$normalization, DEFAULT$stat)
+
 # unpack once; the reader takes a plain TSV
 tsv <- file.path(tempdir(), "bench_precursors.tsv")
 writeLines(readLines(gzfile(data_file)), tsv)
@@ -40,20 +48,26 @@ run_one <- function(summarization, normalization, stat) {
   cfg$preprocessing$normalization <- if (normalization == "median_ref") "median" else normalization
   if (normalization == "median_ref") cfg$preprocessing$normalization_reference <- ref_file
   cfg$preprocessing$imputation$method <- "none"   # tests never use imputed values
-  cfg$statistics$method <- stat
+  cfg$statistics$method <- if (stat == "limma_treat") "limma" else stat
+  cfg$statistics$significance <- if (stat == "limma_treat") "treat" else "cutoff"
+  cfg$statistics$treat_fc <- 1.5
   cfg$enrichment$enabled <- FALSE; cfg$ai$enabled <- FALSE
   cfg$output$dir <- file.path(tempdir(), paste(summarization, normalization, stat, sep = "_"))
   res <- run_pipeline(cfg, verbose = FALSE)
   t <- res$de$tables[["A_vs_B"]]
   t$species <- unname(species_of[t$protein_id])
   t$expected <- unname(expected[t$species])
-  t
+  det <- res$detection$tables[["A_vs_B"]]
+  det$species <- unname(species_of[det$protein_id])
+  list(de = t, detection = det)
 }
 
-score <- function(t, adj_p = 0.05, lfc = 0.585) {
+# Uses the pipeline's own significance call, so each rule (cutoff or TREAT)
+# is scored as it would be reported.
+score <- function(t, adj_p = 0.05) {
   tested <- t[!is.na(t$P.Value), ]
   changed <- tested$species != "HUMAN"
-  sig <- !is.na(tested$adj.P.Val) & tested$adj.P.Val < adj_p & abs(tested$logFC) >= lfc
+  sig <- tested$significant
   correct_dir <- sign(tested$logFC) == sign(tested$expected)
   tp <- sig & changed & correct_dir
   fp <- sig & !tp
@@ -72,25 +86,43 @@ score <- function(t, adj_p = 0.05, lfc = 0.585) {
     mad_human = mad[["HUMAN"]], mad_yeast = mad[["YEAST"]], mad_ecoli = mad[["ECOLI"]])
 }
 
-grid <- expand.grid(stat = c("limma", "welch", "student"),
-                    normalization = c("median", "median_ref", "none"),
-                    summarization = c("median_polish", "top3", "sum"),
+# On/off proteins: correct when a yeast protein is only in A (yeast is higher
+# in A) or an E. coli protein only in B; human on/off calls are false.
+score_detection <- function(d) {
+  on <- nzchar(d$on_off)
+  strict <- on & ((d$on_off == "only_in_A" & d$fraction_A == 1) |
+                  (d$on_off == "only_in_B" & d$fraction_B == 1))
+  ok <- (d$on_off == "only_in_A" & d$species == "YEAST") |
+        (d$on_off == "only_in_B" & d$species == "ECOLI")
+  data.frame(rule = c(">= 2 of 3 in one group, 0 in the other", "3 of 3 in one group, 0 in the other"),
+             listed = c(sum(on), sum(strict)),
+             correct = c(sum(on & ok), sum(strict & ok)),
+             human = c(sum(on & d$species == "HUMAN"), sum(strict & d$species == "HUMAN")),
+             wrong_direction = c(sum(on & !ok & d$species != "HUMAN"),
+                                 sum(strict & !ok & d$species != "HUMAN")))
+}
+
+grid <- expand.grid(stat = c("limma", "limma_treat", "welch", "student"),
+                    normalization = c("median", "mode", "median_ref", "none"),
+                    summarization = c("median_polish", "maxlfq", "top3", "sum"),
                     stringsAsFactors = FALSE)
-results <- list(); tables <- list()
+results <- list(); tables <- list(); detections <- list()
 for (i in seq_len(nrow(grid))) {
   g <- grid[i, ]
-  t <- run_one(g$summarization, g$normalization, g$stat)
-  key <- paste(g$summarization, g$normalization, g$stat, sep = " / ")
-  tables[[key]] <- t
-  results[[key]] <- cbind(g[c("summarization", "normalization", "stat")], score(t))
-  message(sprintf("%-32s sensitivity %.3f  FDP %.3f", key, results[[key]]$sensitivity,
+  key <- key_of(g$summarization, g$normalization, g$stat)
+  r <- run_one(g$summarization, g$normalization, g$stat)
+  tables[[key]] <- r$de
+  if (g$stat == "limma" && g$normalization == "median") detections[[g$summarization]] <- r$detection
+  results[[key]] <- cbind(g[c("summarization", "normalization", "stat")], score(r$de))
+  message(sprintf("%-40s sensitivity %.3f  FDP %.3f", key, results[[key]]$sensitivity,
                   results[[key]]$fdp))
 }
 metrics <- do.call(rbind, results); rownames(metrics) <- NULL
 utils::write.csv(metrics, file.path(out_dir, "metrics.csv"), row.names = FALSE)
+det_score <- score_detection(detections[[DEFAULT$summarization]])
+utils::write.csv(det_score, file.path(out_dir, "detection.csv"), row.names = FALSE)
 
 # figure for the default settings
-default_key <- "median_polish / median / limma"
 if (requireNamespace("ggplot2", quietly = TRUE)) {
   d <- tables[[default_key]]
   d <- d[!is.na(d$logFC), ]
@@ -130,12 +162,20 @@ tab_md <- function(df, cols, header) c(
   paste0("| ", paste(header, collapse = " | "), " |"),
   paste0("|", paste(rep("---", length(header)), collapse = "|"), "|"),
   vapply(seq_len(nrow(df)), function(i) row_md(df[i, ], cols), ""))
-nm <- c(median = "median (all proteins)", median_ref = "median (human reference)", none = "none")
+nm <- c(median = "median (all proteins)", mode = "mode of ratios",
+        median_ref = "median (human reference)", none = "none")
+st <- c(limma = "limma, p + 1.5-fold cutoff", limma_treat = "limma TREAT, 1.5-fold",
+        welch = "Welch, p + 1.5-fold cutoff", student = "Student, p + 1.5-fold cutoff")
 metrics$normalization_label <- unname(nm[metrics$normalization])
-mp <- metrics[metrics$summarization == "median_polish", ]
-lm <- metrics[metrics$stat == "limma", ]
-dflt <- metrics[metrics$summarization == "median_polish" & metrics$normalization == "median" &
-                  metrics$stat == "limma", ]
+metrics$stat_label <- unname(st[metrics$stat])
+dflt <- metrics[metrics$summarization == DEFAULT$summarization &
+                  metrics$normalization == DEFAULT$normalization & metrics$stat == DEFAULT$stat, ]
+t1 <- metrics[metrics$summarization == DEFAULT$summarization &
+                metrics$normalization %in% c("median", "mode"), ]
+t1 <- t1[order(match(t1$normalization, c("median", "mode")), match(t1$stat, names(st))), ]
+t2 <- metrics[metrics$stat == "limma", ]
+t2 <- t2[order(match(t2$summarization, c("median_polish", "maxlfq", "top3", "sum")),
+               match(t2$normalization, names(nm))), ]
 md <- c(
   "# Benchmark results",
   "",
@@ -148,25 +188,44 @@ md <- c(
           dflt$tested_yeast, dflt$tested_ecoli, dflt$tested_human),
   "Expected log2(A/B): human 0, yeast +1, *E. coli* -2.",
   "",
-  "**Scoring:** significant = BH-adjusted p < 0.05 and |log2FC| >= 0.585. A true positive is a",
-  "yeast or *E. coli* protein called significant in the expected direction; any other significant",
-  "call is false. Sensitivity = true positives / yeast + *E. coli* proteins tested. FDP = false /",
-  "all significant calls. \"FDP, adj. p only\" drops the fold-change cutoff. Bias = median log2FC",
-  "minus the expected value. No imputation is used for testing.",
+  sprintf("**Defaults scored:** %s summarization, %s normalization, %s.",
+          DEFAULT$summarization, nm[[DEFAULT$normalization]], st[[DEFAULT$stat]]),
   "",
-  "## Effect of the statistical test (median-polish summarization)",
+  "**Scoring:** significant as reported by the pipeline: BH-adjusted p < 0.05 and |log2FC| >= 0.585",
+  "(1.5-fold), or for TREAT, BH-adjusted p < 0.05 for the hypothesis |FC| > 1.5. A true positive is",
+  "a yeast or *E. coli* protein called significant in the expected direction; any other",
+  "significant call is false. Sensitivity = true positives / yeast + *E. coli* proteins tested.",
+  "FDP = false / all significant calls. \"FDP, adj. p only\" ignores the fold-change requirement.",
+  "Bias = median log2FC minus the expected value. No imputation is used for testing.",
   "",
-  tab_md(mp, c("normalization_label", "stat", "significant", "sensitivity", "fdp", "fdp_adjp_only"),
-         c("Normalization", "Test", "Significant", "Sensitivity", "FDP", "FDP, adj. p only")),
+  sprintf("## Significance rule and test (%s summarization)", DEFAULT$summarization),
   "",
-  "## Effect of summarization and normalization (limma)",
+  tab_md(t1, c("normalization_label", "stat_label", "significant", "sensitivity", "fdp", "fdp_adjp_only"),
+         c("Normalization", "Test and rule", "Significant", "Sensitivity", "FDP", "FDP, adj. p only")),
   "",
-  tab_md(lm, c("summarization", "normalization_label", "sensitivity", "fdp", "bias_human",
-               "bias_yeast", "bias_ecoli"),
-         c("Summarization", "Normalization", "Sensitivity", "FDP", "Bias human",
-           "Bias yeast", "Bias E. coli")),
+  "## Summarization and normalization (limma, p + 1.5-fold cutoff)",
   "",
-  "All 27 combinations, with precision (MAD) per species, are in `results/metrics.csv`.",
+  tab_md(t2, c("summarization", "normalization_label", "sensitivity", "fdp", "fdp_adjp_only",
+               "bias_human", "bias_yeast", "bias_ecoli"),
+         c("Summarization", "Normalization", "Sensitivity", "FDP", "FDP, adj. p only",
+           "Bias human", "Bias yeast", "Bias E. coli")),
+  "",
+  "## Presence/absence (on/off) proteins",
+  "",
+  "With 3 vs 3 samples Fisher's exact test cannot reach significance (smallest possible p = 0.1),",
+  "so on/off proteins are listed descriptively. Correct = yeast present only in A, or *E. coli*",
+  "present only in B.",
+  "",
+  tab_md(det_score, c("rule", "listed", "correct", "human", "wrong_direction"),
+         c("Rule", "Listed", "Correct", "Human (false)", "Wrong direction")),
+  "",
+  if (all(det_score$listed == 0)) paste(
+    "**Not evaluable on this dataset:** every protein is quantified in at least one run of each",
+    "condition, so there are no on/off proteins to find. The module is covered by unit tests;",
+    "benchmarking it needs a dataset with proteins absent from a whole condition.") else "",
+  "",
+  sprintf("All %d combinations, with precision (MAD) per species, are in `results/metrics.csv`.",
+          nrow(metrics)),
   "",
   "![Default settings](results/default_settings.png)")
 writeLines(md, "benchmark/RESULTS.md")
@@ -175,23 +234,25 @@ message("Wrote benchmark/RESULTS.md and ", out_dir)
 utils::write.csv(tables[[default_key]], gzfile(file.path(out_dir, "DE_default_settings.csv.gz")),
                  row.names = FALSE)
 
-# Regression guards, set just below the results of sparcproteomics 0.1.0 so
-# that a code change that makes the default analysis worse fails CI. They are
-# not ideal targets: the E. coli ratio is compressed in every setting,
-# including no normalization, so that bias comes from the data.
+# Regression guards for the default settings, set just below the results of
+# the version that introduced them, so a change that makes the default
+# analysis worse fails CI. They are not ideal targets: the E. coli ratio is
+# compressed in every setting, including no normalization (a property of the
+# data).
+THRESHOLDS <- list(sensitivity = 0.80, fdp = 0.02, bias_human = 0.10, bias_yeast = 0.25,
+                   bias_ecoli = 0.70)
 if (check) {
-  m <- metrics[metrics$summarization == "median_polish" & metrics$normalization == "median" &
-                 metrics$stat == "limma", ]
-  r <- metrics[metrics$summarization == "median_polish" & metrics$normalization == "median_ref" &
-                 metrics$stat == "limma", ]
+  m <- dflt
   fails <- c(
-    if (m$sensitivity < 0.75) sprintf("default sensitivity %.3f < 0.75", m$sensitivity),
-    if (m$fdp > 0.02) sprintf("default FDP %.3f > 0.02", m$fdp),
-    if (abs(m$bias_human) > 0.20) sprintf("default |human bias| %.2f > 0.20", m$bias_human),
-    if (abs(m$bias_yeast) > 0.35) sprintf("default |yeast bias| %.2f > 0.35", m$bias_yeast),
-    if (abs(m$bias_ecoli) > 0.75) sprintf("default |E. coli bias| %.2f > 0.75", m$bias_ecoli),
-    if (r$sensitivity < 0.83) sprintf("reference-normalized sensitivity %.3f < 0.83", r$sensitivity),
-    if (abs(r$bias_human) > 0.05) sprintf("reference-normalized |human bias| %.2f > 0.05", r$bias_human))
+    if (m$sensitivity < THRESHOLDS$sensitivity)
+      sprintf("default sensitivity %.3f < %.2f", m$sensitivity, THRESHOLDS$sensitivity),
+    if (m$fdp > THRESHOLDS$fdp) sprintf("default FDP %.3f > %.2f", m$fdp, THRESHOLDS$fdp),
+    if (abs(m$bias_human) > THRESHOLDS$bias_human)
+      sprintf("default |human bias| %.2f > %.2f", m$bias_human, THRESHOLDS$bias_human),
+    if (abs(m$bias_yeast) > THRESHOLDS$bias_yeast)
+      sprintf("default |yeast bias| %.2f > %.2f", m$bias_yeast, THRESHOLDS$bias_yeast),
+    if (abs(m$bias_ecoli) > THRESHOLDS$bias_ecoli)
+      sprintf("default |E. coli bias| %.2f > %.2f", m$bias_ecoli, THRESHOLDS$bias_ecoli))
   if (length(fails)) stop("Benchmark check failed: ", paste(fails, collapse = "; "), call. = FALSE)
   message("Benchmark check passed: default sensitivity ", fmt(m$sensitivity), ", FDP ", fmt(m$fdp))
 }

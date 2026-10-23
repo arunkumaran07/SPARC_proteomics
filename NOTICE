@@ -1,0 +1,19 @@
+sparcproteomics
+Copyright 2026 arunkumaran07 (https://github.com/arunkumaran07)
+
+Licensed under the Apache License, Version 2.0 (see LICENSE.md).
+
+This repository includes material derived from third-party work:
+
+- benchmark/data/pxd028735_qehfx_dda_precursors.tsv.gz and
+  tests/testthat/fixtures/diann_report_subset.tsv are derived from files in the
+  ProteoBench repository (https://github.com/Proteobench/ProteoBench), licensed
+  under the Apache License, Version 2.0. They were reduced to the columns and
+  rows needed here; see benchmark/prepare_benchmark_data.R and
+  tests/testthat/fixtures/NOTICE.
+- The underlying LC-MS runs are from ProteomeXchange dataset PXD028735,
+  described in Van Puyvelde B et al., "A comprehensive LFQ benchmark dataset on
+  modern day acquisition strategies in proteomics", Scientific Data 9:126 (2022),
+  doi:10.1038/s41597-022-01216-6.
+
+The example datasets in inst/extdata are simulated and contain no real samples.

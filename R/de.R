@@ -52,6 +52,17 @@ build_comparisons <- function(levels, spec = "all_vs_control", control = levels[
 #' multiple-testing correction) unless both groups have at least
 #' `min_valid_per_group` observed values.
 #'
+#' Significance rule:
+#' \describe{
+#'   \item{`cutoff`}{adjusted p < `adj_p_cutoff` **and** |log2FC| >=
+#'     `log2fc_cutoff` (the common double filter).}
+#'   \item{`treat`}{limma only. TREAT (McCarthy & Smyth 2009) tests whether
+#'     |log2FC| exceeds log2(`treat_fc`) and controls the FDR for that
+#'     hypothesis; significant = adjusted p < `adj_p_cutoff`. It is stricter
+#'     than a cutoff at the same fold change: a protein must be shown to exceed
+#'     the threshold, not merely to have an estimate above it.}
+#' }
+#'
 #' @param se A `SummarizedExperiment` after [pp_normalize()].
 #' @param comparisons Data frame from [build_comparisons()].
 #' @param method `"limma"`, `"welch"` or `"student"`.
@@ -65,13 +76,23 @@ build_comparisons <- function(levels, spec = "all_vs_control", control = levels[
 #' @param global_f_test Report a moderated F-test across groups (limma, > 2
 #'   groups).
 #' @param use_imputed Test the imputed assay instead (not recommended).
+#' @param significance `"cutoff"` or `"treat"`; see Details.
+#' @param treat_fc Fold-change threshold for TREAT (linear scale, default 1.5).
 #' @return A list: `tables` (one data frame per comparison), `summary`,
 #'   `f_test` (or `NULL`), `method`, and `design` (limma only).
 #' @export
 run_de <- function(se, comparisons, method = "limma", covariates = NULL, block = NULL,
                    min_valid_per_group = 2, p_adjust = "BH", adj_p_cutoff = 0.05,
                    log2fc_cutoff = 0.585, trend = TRUE, robust = TRUE,
-                   global_f_test = TRUE, use_imputed = FALSE) {
+                   global_f_test = TRUE, use_imputed = FALSE,
+                   significance = "cutoff", treat_fc = 1.5) {
+  significance <- match.arg(significance, c("cutoff", "treat"))
+  if (significance == "treat" && method != "limma") {
+    log_msg("NOTE: TREAT is limma-only; using the fold-change cutoff for the ", method, " test.")
+    significance <- "cutoff"
+  }
+  if (significance == "treat" && (!is.numeric(treat_fc) || treat_fc <= 1))
+    stop("statistics.treat_fc must be a fold change greater than 1 (e.g. 1.5).", call. = FALSE)
   assay_name <- if (use_imputed) "imputed" else "norm"
   if (use_imputed) log_msg("WARNING: testing imputed values; imputed values can ",
                            "create apparent significance.")
@@ -82,7 +103,8 @@ run_de <- function(se, comparisons, method = "limma", covariates = NULL, block =
 
   res <- if (method == "limma") {
     .de_limma(x, g, comparisons, as.data.frame(SummarizedExperiment::colData(se)),
-              covariates, block, trend, robust, global_f_test)
+              covariates, block, trend, robust, global_f_test,
+              treat_lfc = if (significance == "treat") log2(treat_fc) else NULL)
   } else {
     if (length(covariates) || !is.null(block))
       log_msg("NOTE: covariates/blocking are ignored by the ", method, " t-test; ",
@@ -102,7 +124,7 @@ run_de <- function(se, comparisons, method = "limma", covariates = NULL, block =
     tt[gate, c("logFC", "t", "P.Value")] <- NA
     tt$adj.P.Val <- stats::p.adjust(tt$P.Value, method = p_adjust)
     tt$significant <- !is.na(tt$adj.P.Val) & tt$adj.P.Val < adj_p_cutoff &
-      abs(tt$logFC) >= log2fc_cutoff
+      (significance == "treat" | abs(tt$logFC) >= log2fc_cutoff)
     tt$direction <- ifelse(is.na(tt$logFC), NA, ifelse(tt$logFC > 0, "up", "down"))
     tt[[paste0("n_valid_", a)]] <- na
     tt[[paste0("n_valid_", b)]] <- nb
@@ -126,7 +148,8 @@ run_de <- function(se, comparisons, method = "limma", covariates = NULL, block =
     row.names = NULL)
   res$method <- method
   res$settings <- list(p_adjust = p_adjust, adj_p_cutoff = adj_p_cutoff,
-                       log2fc_cutoff = log2fc_cutoff,
+                       log2fc_cutoff = log2fc_cutoff, significance = significance,
+                       treat_fc = if (significance == "treat") treat_fc else NULL,
                        min_valid_per_group = min_valid_per_group, assay = assay_name,
                        covariates = covariates, block = block)
   log_msg("DE (", method, "): ", paste(sprintf("%s %d sig (%d up, %d down)",
@@ -135,7 +158,8 @@ run_de <- function(se, comparisons, method = "limma", covariates = NULL, block =
   res
 }
 
-.de_limma <- function(x, g, comparisons, cd, covariates, block, trend, robust, global_f_test) {
+.de_limma <- function(x, g, comparisons, cd, covariates, block, trend, robust, global_f_test,
+                      treat_lfc = NULL) {
   safe <- paste0("G", seq_along(levels(g)))
   names(safe) <- levels(g)
   design <- stats::model.matrix(~ 0 + g)
@@ -182,11 +206,22 @@ run_de <- function(se, comparisons, method = "limma", covariates = NULL, block =
     cm[safe[[comparisons$numerator[i]]], i] <- 1
     cm[safe[[comparisons$denominator[i]]], i] <- -1
   }
-  fit2 <- limma::eBayes(limma::contrasts.fit(fit, cm), trend = trend, robust = robust)
-  tables <- lapply(colnames(cm), function(ct) {
-    tt <- limma::topTable(fit2, coef = ct, number = Inf, sort.by = "none")
-    tt[rownames(x), c("logFC", "AveExpr", "t", "P.Value")]
-  })
+  cfit <- limma::contrasts.fit(fit, cm)
+  if (is.null(treat_lfc)) {
+    fit2 <- limma::eBayes(cfit, trend = trend, robust = robust)
+    tables <- lapply(colnames(cm), function(ct) {
+      tt <- limma::topTable(fit2, coef = ct, number = Inf, sort.by = "none")
+      tt[rownames(x), c("logFC", "AveExpr", "t", "P.Value")]
+    })
+  } else {
+    # TREAT: tests H0 |log2FC| <= treat_lfc, so p-values already account for
+    # the fold-change threshold (McCarthy & Smyth 2009)
+    fit2 <- limma::treat(cfit, lfc = treat_lfc, trend = trend, robust = robust)
+    tables <- lapply(colnames(cm), function(ct) {
+      tt <- limma::topTreat(fit2, coef = ct, number = Inf, sort.by = "none")
+      tt[rownames(x), c("logFC", "AveExpr", "t", "P.Value")]
+    })
+  }
 
   f_test <- NULL
   if (global_f_test && nlevels(g) > 2) {
@@ -223,4 +258,17 @@ run_de <- function(se, comparisons, method = "limma", covariates = NULL, block =
   tstat[bad] <- NA; p[bad] <- NA
   data.frame(logFC = ma - mb, AveExpr = rowMeans(cbind(xa, xb), na.rm = TRUE),
              t = tstat, P.Value = p, row.names = rownames(x))
+}
+
+#' Describe the significance rule in words
+#'
+#' @param settings The `settings` element of a [run_de()] result.
+#' @return A short character string, e.g. for figure subtitles and reports.
+#' @export
+significance_label <- function(settings) {
+  if (identical(settings$significance, "treat"))
+    sprintf("TREAT, |FC| > %g, %s-adjusted p < %g", settings$treat_fc, settings$p_adjust,
+            settings$adj_p_cutoff)
+  else sprintf("%s-adjusted p < %g and |log2FC| >= %g", settings$p_adjust %||% "BH",
+               settings$adj_p_cutoff, settings$log2fc_cutoff)
 }

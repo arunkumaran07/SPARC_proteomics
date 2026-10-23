@@ -25,7 +25,7 @@ test_that("every imputation and normalization option runs", {
     # tests use the un-imputed matrix, so DE results do not depend on imputation
     expect_true(all(r$rec[, "power"] > 0.7), info = im)
   }
-  for (nm in c("none", "median", "quantile", "cyclicloess")) {
+  for (nm in c("none", "median", "mode", "quantile", "cyclicloess")) {
     r <- run_sim(edit = function(c) { c$preprocessing$normalization <- nm; c })
     expect_equal(S4Vectors::metadata(r$res$se)$normalization, nm)
   }

@@ -4,3 +4,6 @@
 ^README\.md$
 ^data-raw$
 ^benchmark$
+^LICENSE\.md$
+^NOTICE$
+^CITATION\.cff$

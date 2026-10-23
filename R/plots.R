@@ -33,10 +33,11 @@ plot_pca <- function(se, assay = "imputed", color = "group") {
 #' @param title Plot title.
 #' @param adj_p_cutoff,log2fc_cutoff Threshold lines.
 #' @param label_n Number of top significant proteins to label, split between up and down.
+#' @param subtitle Optional subtitle; by default it states the cutoffs.
 #' @return A ggplot object.
 #' @export
 plot_volcano <- function(tab, title = "", adj_p_cutoff = 0.05, log2fc_cutoff = 0.585,
-                         label_n = 10) {
+                         label_n = 10, subtitle = NULL) {
   .need("ggplot2", "for plotting")
   d <- tab[!is.na(tab$P.Value), , drop = FALSE]
   d$class <- ifelse(d$significant, ifelse(d$logFC > 0, "up", "down"), "ns")
@@ -62,7 +63,7 @@ plot_volcano <- function(tab, title = "", adj_p_cutoff = 0.05, log2fc_cutoff = 0
     ggplot2::scale_colour_manual(values = c(down = "#2166AC", ns = "grey70", up = "#B2182B")) +
     ggplot2::labs(x = "log2 fold change", y = "-log10 p-value", colour = NULL,
                   title = title,
-                  subtitle = sprintf("%d significant (adj. p < %g, |log2FC| >= %g)",
-                                     sum(d$significant), adj_p_cutoff, log2fc_cutoff)) +
+                  subtitle = subtitle %||% sprintf("%d significant (adj. p < %g, |log2FC| >= %g)",
+                                                   sum(d$significant), adj_p_cutoff, log2fc_cutoff)) +
     ggplot2::theme_bw(base_size = 11)
 }

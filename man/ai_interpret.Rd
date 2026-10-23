@@ -4,7 +4,7 @@
 \alias{ai_interpret}
 \title{Interpret results with Claude (optional)}
 \usage{
-ai_interpret(de, se, cfg, enrichment = NULL, top_n = 15)
+ai_interpret(de, se, cfg, enrichment = NULL, top_n = 15, detection = NULL)
 }
 \arguments{
 \item{de}{Result of \code{\link[=run_de]{run_de()}}.}
@@ -16,6 +16,8 @@ ai_interpret(de, se, cfg, enrichment = NULL, top_n = 15)
 \item{enrichment}{Optional named list of \code{\link[=run_enrichment]{run_enrichment()}} results.}
 
 \item{top_n}{Proteins listed per comparison.}
+
+\item{detection}{Optional result of \code{\link[=run_detection]{run_detection()}}.}
 }
 \value{
 Markdown text, or \code{NULL} if AI is unavailable or the call failed.

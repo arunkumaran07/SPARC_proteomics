@@ -31,6 +31,7 @@ run_pipeline <- function(config, verbose = TRUE) {
           cfg$study$title, " | species: ", cfg$study$species)
 
   se <- build_dataset(cfg)
+  se_unfiltered <- se            # detection testing needs proteins the filter removes
   pp <- cfg$preprocessing
   se <- pp_filter(se, pp$filter$method, pp$filter$min_valid_fraction)
   ref <- pp$normalization_reference
@@ -52,13 +53,26 @@ run_pipeline <- function(config, verbose = TRUE) {
                p_adjust = st$p_adjust, adj_p_cutoff = st$adj_p_cutoff,
                log2fc_cutoff = st$log2fc_cutoff, trend = st$limma_trend,
                robust = st$limma_robust, global_f_test = st$global_f_test,
+               significance = st$significance, treat_fc = st$treat_fc,
                use_imputed = im$use_for_de)
 
+  .check_centering(de, pp$normalization)
   for (nm in names(de$tables))
     utils::write.csv(de$tables[[nm]], file.path(out, paste0("DE_", nm, ".csv")), row.names = FALSE)
   utils::write.csv(de$summary, file.path(out, "DE_summary.csv"), row.names = FALSE)
   if (!is.null(de$f_test))
     utils::write.csv(de$f_test, file.path(out, "F_test.csv"), row.names = FALSE)
+
+  detection <- NULL
+  if (isTRUE(cfg$detection$enabled)) {
+    detection <- run_detection(se_unfiltered, comps, adj_p_cutoff = st$adj_p_cutoff,
+                               min_delta = cfg$detection$min_delta,
+                               on_off_min_fraction = cfg$detection$on_off_min_fraction)
+    for (nm in names(detection$tables))
+      utils::write.csv(detection$tables[[nm]], file.path(out, paste0("Detection_", nm, ".csv")),
+                       row.names = FALSE)
+    utils::write.csv(detection$summary, file.path(out, "Detection_summary.csv"), row.names = FALSE)
+  }
 
   enrichment <- NULL
   if (isTRUE(cfg$enrichment$enabled)) {
@@ -85,15 +99,19 @@ run_pipeline <- function(config, verbose = TRUE) {
     for (nm in names(de$tables))
       ggplot2::ggsave(file.path(out, paste0("Volcano_", nm, ".png")),
                       plot_volcano(de$tables[[nm]], gsub("_", " ", nm), st$adj_p_cutoff,
-                                   st$log2fc_cutoff), width = 6, height = 5, dpi = 300)
+                                   if (st$significance == "treat") log2(st$treat_fc) else st$log2fc_cutoff,
+                                   subtitle = sprintf("%d significant (%s)", sum(de$tables[[nm]]$significant),
+                                                      significance_label(de$settings))),
+                      width = 6, height = 5, dpi = 300)
   }
 
-  ai <- ai_interpret(de, se, cfg, enrichment)
+  ai <- ai_interpret(de, se, cfg, enrichment, detection = detection)
   if (!is.null(ai)) writeLines(ai, file.path(out, "AI_interpretation.md"))
 
   write_config(cfg, file.path(out, "config_used.yml"))
   writeLines(utils::capture.output(utils::sessionInfo()), file.path(out, "session_info.txt"))
-  res <- list(se = se, de = de, enrichment = enrichment, ai = ai, config = cfg)
+  res <- list(se = se, de = de, detection = detection, enrichment = enrichment, ai = ai,
+              config = cfg)
   saveRDS(res, file.path(out, "results.rds"))
   log_msg("Done. Results in ", normalizePath(out))
   writeLines(get_run_log(), file.path(out, "run_log.txt"))

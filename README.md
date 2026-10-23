@@ -7,11 +7,10 @@ choose your options in one YAML file; get differential-abundance tables, plots,
 Reactome enrichment and, optionally, an AI-written interpretation.
 
 **Benchmarked on real data with known answers** (PXD028735, human/yeast/*E. coli*
-mixture): with default settings it finds 78% of the true changes with 0.7% false
-discoveries, and 86% with 0.4% when normalized on a stable reference set.
-See [benchmark/RESULTS.md](benchmark/RESULTS.md).
+mixture, 3 vs 3): with default settings it finds 84% of the true changes with 0.4%
+false discoveries. See [benchmark/RESULTS.md](benchmark/RESULTS.md).
 
-> Status: early development (0.1.0). Private while testing.
+> Status: early development (0.2.0). See [NEWS.md](NEWS.md) for changes.
 
 ## What you can choose
 
@@ -19,14 +18,16 @@ See [benchmark/RESULTS.md](benchmark/RESULTS.md).
 |---|---|
 | Species | human, mouse, rat, zebrafish, fly, worm, other (`list_species()`) |
 | Input format | protein level: `diann`, `spectronaut`, `maxquant`, `generic`, `annotated_xlsx`; precursor level: `diann_report` (DIA-NN `report.tsv` / `report.parquet`), `peptide_generic` |
-| Precursor → protein | median polish (recommended), top3, sum |
+| Precursor → protein | median polish (recommended), MaxLFQ, top3, sum |
 | Control group | any level of your group column |
 | Comparisons | every group vs control, all pairwise, or a list (`"DoseHigh vs DoseLow"`) |
 | Number of groups | any (k ≥ 2); a global F-test is added for k > 2 |
 | Filtering | valid values in any group / all groups / overall / none |
-| Normalization | none, median (optionally on a stable reference protein set), quantile, cyclic loess |
+| Normalization | mode of ratios (default), median (optionally on a stable reference protein set), none, quantile, cyclic loess |
 | Imputation | none, mixed (kNN + down-shift), kNN, down-shift (Perseus-style), minimum |
 | Statistics | limma moderated t (recommended), Welch t, Student t |
+| Significance rule | adjusted p + 1.5-fold cutoff (default), or limma TREAT at 1.5-fold (stricter) |
+| Presence/absence | Fisher's exact test on detection, plus a descriptive on/off list for small groups |
 | Covariates / blocking | any sample-sheet columns (limma) |
 | AI interpretation | auto (only if an API key is set), on, off |
 
@@ -34,7 +35,7 @@ See [benchmark/RESULTS.md](benchmark/RESULTS.md).
 
 ```r
 install.packages("remotes")
-remotes::install_github("arunkumaran07/SPARC_proteomics")   # needs access while private
+remotes::install_github("arunkumaran07/SPARC_proteomics")
 # optional extras
 BiocManager::install(c("impute", "clusterProfiler", "ReactomePA", "org.Hs.eg.db", "org.Mm.eg.db"))
 install.packages(c("ggplot2", "readxl", "httr2"))
@@ -76,8 +77,8 @@ enrichment behave as on real data; `truth.csv` lists every planted change.
 | `"diann"` | DIA-NN `report.pg_matrix.tsv`, 1,800 proteins; Control, TreatmentA, TreatmentB x 5; sex and batch columns. TreatmentA raises electron-transport-chain proteins (GO:0022900), TreatmentB lowers cytoplasmic-translation proteins (GO:0002181), plus 40 random changes each. |
 | `"annotated"` | The same proteins as a core-facility Excel workbook: annotations above the data, Control vs TreatmentA, each sample exported as linear and log2 under one name. |
 
-On the DIA-NN example the default settings recover 96% (TreatmentA) and 93%
-(TreatmentB) of the planted changes with 3.5% and 4.8% false discoveries.
+On the DIA-NN example the default settings recover 96.5% (TreatmentA) and 91.8%
+(TreatmentB) of the planted changes with 3.5% and 4.9% false discoveries.
 `data-raw/make_example_data.R` regenerates both datasets.
 
 ## Design choices
@@ -90,12 +91,21 @@ On the DIA-NN example the default settings recover 96% (TreatmentA) and 93%
   it. The moderated statistic borrows variance information across proteins
   (Smyth 2004).
 - **Median polish is the default summarization** for precursor-level input; it
-  beat top3 and sum in every benchmark setting.
-- **Median normalization assumes most proteins don't change.** When many do
-  (strong treatments, tissue-composition shifts), list stable proteins in a
-  file and set `preprocessing.normalization_reference`, or use `none` if equal
-  loading is assured. On the benchmark, normalizing on all proteins shifted
-  ratios by −0.15 log2; the reference set removed the shift.
+  beat top3 and sum in every benchmark setting. MaxLFQ performed about the same.
+- **Mode-of-ratios normalization is the default.** Median normalization assumes
+  most proteins don't change; mode normalization only assumes unchanged proteins
+  are the largest group. On the benchmark (~30% of proteins changing in one
+  direction), median normalization shifted all ratios by −0.15 log2 and found
+  78% of true changes (17.7% false calls on adjusted p alone); mode found 84%
+  (1.9%). In simulations with balanced changes it found as many true changes as
+  median with fewer false ones. Median, with an optional stable reference set,
+  remains available; the run log notes when its fold changes look off-centre.
+- **TREAT is available but not the default.** At the same 1.5-fold threshold it
+  is far stricter than the p + fold-change cutoff (benchmark: no false
+  discoveries, but less than half the true changes found).
+- **Presence/absence is tested separately**, before valid-value filtering.
+  With 3 vs 3 replicates Fisher's test cannot reach significance, so on/off
+  proteins are listed as candidates without a p-value.
 - **Per-comparison gating**: a protein is tested in a comparison only if both
   groups have at least `min_valid_per_group` values; gating happens before FDR
   correction.
@@ -107,15 +117,16 @@ On the DIA-NN example the default settings recover 96% (TreatmentA) and 93%
 
 ## Outputs (`output$dir`)
 
-`DE_<comparison>.csv`, `DE_summary.csv`, `F_test.csv`, `Reactome_ORA_*.csv`,
+`DE_<comparison>.csv`, `DE_summary.csv`, `F_test.csv`, `Detection_<comparison>.csv`,
+`Detection_summary.csv`, `Reactome_ORA_*.csv`,
 `Reactome_GSEA_*.csv`, `PCA.png`, `Volcano_*.png`, `AI_interpretation.md`,
 `config_used.yml`, `run_log.txt`, `session_info.txt`, `results.rds`
 (the `SummarizedExperiment` and all results).
 
 ## Roadmap
 
-diaPASEF benchmark, limpa and DEqMS options, QC report, tissue/contamination
-marker panels (muscle, plasma, CSF), presence/absence testing, time-course
+diaPASEF benchmark, comparison with limpa and MSstats, DEqMS option, QC report,
+tissue/contamination marker panels (muscle, plasma, CSF), time-course
 trajectories, factorial interaction tests, cross-validated classification,
 HTML/PDF report, Shiny app, MCP server.
 
@@ -127,7 +138,15 @@ HTML/PDF report, Shiny app, MCP server.
 - Tyanova S et al. (2016) *Nat Methods* 13:731–740 — Perseus (down-shift imputation).
 - Yu G, He Q-Y (2016) *Mol BioSyst* 12:477–479 — ReactomePA.
 - Van Puyvelde B et al. (2022) *Sci Data* 9:126 — LFQ benchmark dataset (PXD028735).
+- Cox J et al. (2014) *Mol Cell Proteomics* 13:2513–2526 — MaxLFQ.
+- McCarthy DJ, Smyth GK (2009) *Bioinformatics* 25:765–771 — TREAT.
 
 ## License
 
-MIT
+Apache License 2.0; see [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE). Copyright
+arunkumaran07. The benchmark data and one test fixture are derived from ProteoBench
+(Apache-2.0) and PXD028735; details in NOTICE.
+
+## Citation
+
+See [CITATION.cff](CITATION.cff) (GitHub shows a "Cite this repository" button).

@@ -36,18 +36,19 @@ ai_status <- function(cfg) {
 #' @param cfg Configuration list.
 #' @param enrichment Optional named list of [run_enrichment()] results.
 #' @param top_n Proteins listed per comparison.
+#' @param detection Optional result of [run_detection()].
 #' @return Markdown text, or `NULL` if AI is unavailable or the call failed.
 #' @export
-ai_interpret <- function(de, se, cfg, enrichment = NULL, top_n = 15) {
+ai_interpret <- function(de, se, cfg, enrichment = NULL, top_n = 15, detection = NULL) {
   st <- ai_status(cfg)
   if (!st$use) { log_msg("AI interpretation skipped (", st$reason, ")."); return(NULL) }
-  prompts <- .ai_prompts(de, se, cfg, enrichment, top_n)
+  prompts <- .ai_prompts(de, se, cfg, enrichment, top_n, detection)
   txt <- .call_claude(prompts$system, prompts$user, cfg$ai)
   if (is.null(txt) || !nzchar(txt)) return(NULL)
   paste0("> AI-generated interpretation (", cfg$ai$model, "). Review before use.\n\n", txt)
 }
 
-.ai_prompts <- function(de, se, cfg, enrichment, top_n) {
+.ai_prompts <- function(de, se, cfg, enrichment, top_n, detection = NULL) {
   g <- se$group
   s <- de$summary
   tops <- vapply(names(de$tables), function(nm) {
@@ -91,14 +92,16 @@ ai_interpret <- function(de, se, cfg, enrichment = NULL, top_n = 15) {
     "Proteins analysed: ", nrow(se), "\n",
     "Normalization: ", cfg$preprocessing$normalization,
     "; imputation (not used for testing unless stated): ", cfg$preprocessing$imputation$method, "\n",
-    "Test: ", de$method, "; ", de$settings$p_adjust, "-adjusted p < ", de$settings$adj_p_cutoff,
-    " and |log2FC| >= ", de$settings$log2fc_cutoff, "\n",
+    "Test: ", de$method, "; significant = ", significance_label(de$settings), "\n",
     if (length(de$settings$covariates)) paste0("Adjusted for: ", paste(de$settings$covariates, collapse = ", "), "\n"),
     "\nComparison summary:\n", paste(utils::capture.output(print(s, row.names = FALSE)), collapse = "\n"),
     if (!is.null(de$f_test)) paste0("\nGlobal F-test: ", sum(de$f_test$adj.P.Val < 0.05, na.rm = TRUE),
                                    " proteins differ across groups at BH < 0.05.\n") else "\n",
     "\nTop proteins per comparison (* = significant):\n", paste(tops, collapse = "\n\n"),
     "\n\nReactome enrichment:\n", paste(enr, collapse = "\n"),
+    if (!is.null(detection)) paste0("\n\nPresence/absence (Fisher exact on detection; on/off = ",
+      "descriptive, detected in one group only):\n", paste(utils::capture.output(
+        print(detection$summary, row.names = FALSE)), collapse = "\n")) else "",
     if (length(guards)) paste0("\n\nCONSTRAINTS:\n- ", paste(guards, collapse = "\n- ")) else "")
   list(system = system, user = user)
 }

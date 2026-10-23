@@ -28,13 +28,15 @@ named in `prepare_benchmark_data.R`, which regenerates it.
 From the repository root, with the package installed:
 
 ```r
-Rscript benchmark/run_benchmark.R           # all 27 combinations -> RESULTS.md, results/
+Rscript benchmark/run_benchmark.R           # all 64 combinations -> RESULTS.md, results/
 Rscript benchmark/run_benchmark.R --check   # also fail if results regress
 ```
 
-It runs every combination of summarization (median polish, top3, sum), normalization
-(median of all proteins, median of a human reference set, none) and test (limma,
-Welch, Student), starting from precursors, without imputation for testing. The
+It runs every combination of summarization (median polish, MaxLFQ, top3, sum),
+normalization (median of all proteins, mode of ratios, median of a human reference set,
+none) and test (limma with p + 1.5-fold cutoff, limma TREAT at 1.5-fold, Welch,
+Student), 64 in all, starting from precursors, without imputation for testing. It also
+scores the descriptive on/off (presence/absence) list. The
 GitHub Actions workflow runs it with `--check` on every push.
 
 ## What it shows
@@ -43,15 +45,22 @@ GitHub Actions workflow runs it with `--check` on every push.
   at ≤1.4% false discoveries. Welch finds 47–58% when data are normalized, and the
   unmoderated t-tests find nothing at all without normalization: their best p-value
   (~3e-4) cannot survive correction across ~4,300 proteins.
-- **Summarization.** Median polish outperforms top3 and sum on sensitivity and false
-  discoveries in every normalization setting.
+- **Summarization.** Median polish and MaxLFQ outperform top3 and sum on sensitivity
+  and false discoveries in every normalization setting; MaxLFQ finds slightly more true
+  changes with slightly more false ones.
 - **Median normalization when many proteins change.** Here ~30% of proteins truly
   change, which violates the assumption that most do not. Normalizing on all proteins
   shifts every ratio by about −0.15 log2. The fold-change cutoff absorbs most of this
   (FDP 0.7%), but on adjusted p-values alone 17.7% of calls are false. Computing the
   factors from a stable reference set (`preprocessing.normalization_reference`)
-  removes the shift (human bias 0.00) and raises sensitivity to 86%.
-- **Ratio compression.** The *E. coli* ratio comes out at about −1.3 to −1.5 instead of
+  removes the shift (human bias 0.00) and raises sensitivity to 86%. Mode-of-ratios
+  normalization (the package default) needs no reference list: 84% sensitivity,
+  0.4% FDP, 1.9% FDP on adjusted p alone, human bias −0.04.
+- **TREAT at 1.5-fold** produced no false discoveries in any normalization, but found
+  10–45% of true changes (median polish), against 78–88% for the default rule.
+- **Presence/absence** could not be evaluated: every protein here has values in both
+  conditions.
+- **Ratio compression.** The *E. coli* ratio comes out at about −1.1 to −1.5 instead of
   −2 in every setting, including no normalization, so it comes from the data (*E. coli*
   is 5% of sample A), not from the analysis. The CI thresholds allow for it.
 

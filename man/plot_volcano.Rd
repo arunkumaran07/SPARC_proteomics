@@ -9,7 +9,8 @@ plot_volcano(
   title = "",
   adj_p_cutoff = 0.05,
   log2fc_cutoff = 0.585,
-  label_n = 10
+  label_n = 10,
+  subtitle = NULL
 )
 }
 \arguments{
@@ -20,6 +21,8 @@ plot_volcano(
 \item{adj_p_cutoff, log2fc_cutoff}{Threshold lines.}
 
 \item{label_n}{Number of top significant proteins to label, split between up and down.}
+
+\item{subtitle}{Optional subtitle; by default it states the cutoffs.}
 }
 \value{
 A ggplot object.

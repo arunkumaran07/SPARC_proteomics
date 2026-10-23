@@ -4,20 +4,29 @@
 \alias{pp_normalize}
 \title{Normalize log2 intensities between samples}
 \usage{
-pp_normalize(se, method = "median", reference = NULL)
+pp_normalize(se, method = "mode", reference = NULL)
 }
 \arguments{
 \item{se}{A \code{SummarizedExperiment} with a \code{log2} assay.}
 
 \item{method}{\code{"none"} (data already normalized upstream, e.g. by the search
 engine), \code{"median"} (subtract each sample's median, add back the overall
-median), \code{"quantile"} or \code{"cyclicloess"} (both via
+median), \code{"mode"} (see below), \code{"quantile"} or \code{"cyclicloess"} (both via
 \code{\link[limma:normalizebetweenarrays]{limma::normalizeBetweenArrays()}}).
 
 Median normalization assumes most proteins do not change. When a large
 fraction does (e.g. strong treatments, spike-in or mixed-species designs,
-tissue-composition shifts), give a \code{reference} set expected to be stable,
-and the sample medians are computed from those proteins only.}
+tissue-composition shifts), either give a \code{reference} set expected to be
+stable (sample medians are then computed from those proteins only), or use
+\code{"mode"}.
+
+\code{"mode"} compares samples in pairs: for each pair, the \strong{most common}
+per-protein log-ratio (the peak of its density) estimates how far apart the
+two samples are, and the sample shifts are the least-squares fit to all
+pairs. Proteins that change move away from that peak rather than dragging
+it, so the method only assumes that unchanged proteins are the largest
+single group, not a majority. The price is a noisier estimate: when changes
+are balanced, median normalization is somewhat more precise.}
 
 \item{reference}{For \code{"median"}: optional protein IDs or gene symbols
 (matched against \code{protein_id} and \code{gene}) used to compute the

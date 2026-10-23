@@ -36,20 +36,29 @@ pp_filter <- function(se, method = "any_group", min_fraction = 0.7, assay = "log
 #' @param se A `SummarizedExperiment` with a `log2` assay.
 #' @param method `"none"` (data already normalized upstream, e.g. by the search
 #'   engine), `"median"` (subtract each sample's median, add back the overall
-#'   median), `"quantile"` or `"cyclicloess"` (both via
+#'   median), `"mode"` (see below), `"quantile"` or `"cyclicloess"` (both via
 #'   [limma::normalizeBetweenArrays()]).
 #'
 #' Median normalization assumes most proteins do not change. When a large
 #' fraction does (e.g. strong treatments, spike-in or mixed-species designs,
-#' tissue-composition shifts), give a `reference` set expected to be stable,
-#' and the sample medians are computed from those proteins only.
+#' tissue-composition shifts), either give a `reference` set expected to be
+#' stable (sample medians are then computed from those proteins only), or use
+#' `"mode"`.
+#'
+#' `"mode"` compares samples in pairs: for each pair, the **most common**
+#' per-protein log-ratio (the peak of its density) estimates how far apart the
+#' two samples are, and the sample shifts are the least-squares fit to all
+#' pairs. Proteins that change move away from that peak rather than dragging
+#' it, so the method only assumes that unchanged proteins are the largest
+#' single group, not a majority. The price is a noisier estimate: when changes
+#' are balanced, median normalization is somewhat more precise.
 #'
 #' @param reference For `"median"`: optional protein IDs or gene symbols
 #'   (matched against `protein_id` and `gene`) used to compute the
 #'   normalization factors. All proteins are still normalized.
 #' @return `se` with a new assay `norm`.
 #' @export
-pp_normalize <- function(se, method = "median", reference = NULL) {
+pp_normalize <- function(se, method = "mode", reference = NULL) {
   x <- SummarizedExperiment::assay(se, "log2")
   ref_rows <- rep(TRUE, nrow(x))
   if (!is.null(reference) && method == "median") {
@@ -65,6 +74,7 @@ pp_normalize <- function(se, method = "median", reference = NULL) {
     none        = x,
     median      = sweep(x, 2, matrixStats::colMedians(x[ref_rows, , drop = FALSE], na.rm = TRUE), "-") +
                     stats::median(x[ref_rows, ], na.rm = TRUE),
+    mode        = sweep(x, 2, .mode_shifts(x), "-"),
     quantile    = limma::normalizeBetweenArrays(x, method = "quantile"),
     cyclicloess = limma::normalizeBetweenArrays(x, method = "cyclicloess"),
     stop("Unknown normalization '", method, "'.", call. = FALSE))
@@ -177,4 +187,65 @@ pp_impute <- function(se, method = "mixed", shift = 1.8, width = 0.3,
   log_msg("Imputation (", method, "): ", sum(miss & !is.na(y)), " of ", sum(miss),
           " missing values filled.")
   se
+}
+
+# Location of the highest peak of a density estimate.
+.density_mode <- function(v) {
+  v <- v[is.finite(v)]
+  if (length(v) < 50) return(stats::median(v))
+  d <- stats::density(v, n = 4096, bw = "nrd0")
+  d$x[which.max(d$y)]
+}
+
+# Per-sample shifts for mode normalization. For pairs of samples, the mode of
+# their per-protein log-ratios estimates the difference in their shifts; the
+# shifts are then the least-squares fit to all pairwise differences (centred
+# to sum to zero). Comparing samples pairwise avoids comparing a sample with a
+# reference that contains it, which pulls the mode towards zero. Up to 61
+# samples all pairs are used; above that each sample is paired with its next
+# 30 neighbours (cyclically), which keeps every sample connected.
+.mode_shifts <- function(x) {
+  n <- ncol(x)
+  use <- rowMeans(!is.na(x)) >= 0.5
+  if (sum(use) < 50 || n < 2) {
+    log_msg("NOTE: fewer than 50 well-observed proteins; mode normalization falls back to medians.")
+    s <- matrixStats::colMedians(x, na.rm = TRUE)
+    return(s - mean(s, na.rm = TRUE))
+  }
+  x <- x[use, , drop = FALSE]
+  pr <- if (n <= 61) t(utils::combn(n, 2)) else
+    do.call(rbind, lapply(seq_len(30), function(k) cbind(seq_len(n), (seq_len(n) + k - 1) %% n + 1)))
+  r <- apply(pr, 1, function(ij) .density_mode(x[, ij[1]] - x[, ij[2]]))
+  ok <- is.finite(r)
+  D <- matrix(0, sum(ok), n)
+  D[cbind(seq_len(sum(ok)), pr[ok, 1])] <- 1
+  D[cbind(seq_len(sum(ok)), pr[ok, 2])] <- -1
+  linked <- colSums(D != 0) > 0
+  s <- rep(NA_real_, n)
+  s[linked] <- qr.solve(rbind(D[, linked, drop = FALSE], 1), c(r[ok], 0))
+  if (any(!linked)) {
+    log_msg("NOTE: ", sum(!linked), " sample(s) share too few proteins with the others for ",
+            "mode normalization; they are median-normalized instead.")
+    med <- matrixStats::colMedians(x, na.rm = TRUE)
+    s[!linked] <- med[!linked] - mean(med[linked], na.rm = TRUE) + mean(s[linked])
+  }
+  s
+}
+
+# Warns when the most common log2FC of a comparison is clearly not zero, the
+# sign that a normalization assumption failed (many proteins changing in one
+# direction). Returns the per-comparison modes invisibly.
+.check_centering <- function(de, normalization, tolerance = 0.1) {
+  modes <- vapply(de$tables, function(t) {
+    v <- t$logFC[is.finite(t$logFC)]
+    if (length(v)) .density_mode(v) else NA_real_
+  }, numeric(1))
+  off <- names(modes)[!is.na(modes) & abs(modes) > tolerance]
+  if (length(off) && normalization != "mode")
+    log_msg("NOTE: the most common log2FC is ", paste(sprintf("%.2f in %s", modes[off], off),
+            collapse = ", "), ", not 0. With small groups this can be noise, but if many ",
+            "proteins are expected to change in one direction, '", normalization,
+            "' normalization shifts all ratios; consider preprocessing.normalization: mode ",
+            "or a normalization_reference set (see benchmark/RESULTS.md).")
+  invisible(modes)
 }
