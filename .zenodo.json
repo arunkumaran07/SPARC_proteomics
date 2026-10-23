@@ -1,0 +1,12 @@
+{
+  "title": "sparcproteomics: engine-agnostic downstream analysis of quantitative proteomics data",
+  "upload_type": "software",
+  "description": "R package for downstream analysis of quantitative proteomics data from DIA-NN, Spectronaut, MaxQuant, DIA-NN precursor reports, peptide tables or a generic matrix: configurable species, groups, comparisons, normalization, imputation and statistics (limma, Welch, Student, TREAT), presence/absence testing, optional Reactome enrichment and AI interpretation. Benchmarked on PXD028735.",
+  "creators": [{"name": "arunkumaran07"}],
+  "license": "Apache-2.0",
+  "keywords": ["proteomics", "mass spectrometry", "differential abundance", "limma", "R"],
+  "related_identifiers": [
+    {"identifier": "https://github.com/arunkumaran07/SPARC_proteomics", "relation": "isSupplementTo", "scheme": "url"},
+    {"identifier": "10.1038/s41597-022-01216-6", "relation": "references", "scheme": "doi"}
+  ]
+}
