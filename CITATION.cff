@@ -7,6 +7,14 @@ authors:
 version: 0.2.0
 date-released: 2026-10-23
 license: Apache-2.0
+doi: 10.5281/zenodo.23603769
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23603769
+    description: Zenodo archive of version 0.2.0
+  - type: doi
+    value: 10.5281/zenodo.23603768
+    description: Zenodo concept DOI (all versions)
 repository-code: https://github.com/arunkumaran07/SPARC_proteomics
 keywords:
   - proteomics
